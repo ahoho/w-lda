@@ -99,6 +99,12 @@ class Unsupervised(Compute):
 
         # Retrieve data
         docs = self.data.get_documents(key='train')
+        if self.args['use_kd']:
+            split_on = docs.shape[1] // 2
+            docs, bert_logits = docs[:,:split_on], docs[:,split_on:]
+            t = self.args['kd_softmax_temp']
+            kd_docs = nd.softmax(bert_logits / t) * nd.sum(docs, axis=1, keepdims=True)
+            kd_docs = kd_docs * (kd_docs > self.args['kd_min_count'])
 
         y_true = np.random.dirichlet(np.ones(self.ndim_y) * self.args['dirich_alpha'], size=batch_size)
         y_true = nd.array(y_true, ctx=model_ctx)
@@ -113,9 +119,21 @@ class Unsupervised(Compute):
                 y_onehot_u_softmax = (1 - self.args['latent_noise']) * y_onehot_u_softmax + self.args['latent_noise'] * y_noise
             x_reconstruction_u = self.Dec(y_onehot_u_softmax)
 
-            logits = nd.log_softmax(x_reconstruction_u)
-            loss_reconstruction = nd.mean(nd.sum(- docs * logits, axis=1))
-            loss_total = loss_reconstruction * self.args['recon_alpha']
+            if self.args['use_kd']:
+                kd_logits = nd.log_softmax(x_reconstruction_u / t)
+                logits = nd.log_softmax(x_reconstruction_u)
+
+                kd_loss_reconstruction = nd.mean(nd.sum(- kd_docs * kd_logits, axis=1))
+                loss_reconstruction = nd.mean(nd.sum(- docs * logits, axis=1))
+
+                loss_total = self.args['recon_alpha'] * (
+                    self.args['kd_loss_alpha'] * t * t * (kd_loss_reconstruction) +
+                    (1 - self.args['kd_loss_alpha']) * loss_reconstruction
+                )
+            else: 
+                logits = nd.log_softmax(x_reconstruction_u)
+                loss_reconstruction = nd.mean(nd.sum(- docs * logits, axis=1))
+                loss_total = loss_reconstruction * self.args['recon_alpha']
 
             ### mmd phase ###
             if self.args['adverse']:
@@ -311,6 +329,12 @@ class Unsupervised(Compute):
             for batch in batch_iter:
                 # 1. Retrieve data
                 docs = self.data.get_documents(key=dataset)
+                if self.args['use_kd']:
+                    split_on = docs.shape[1] // 2
+                    docs, bert_logits = docs[:,:split_on], docs[:,split_on:]
+                    # TODO: below is not used, but also may not be necessary
+                    t = self.args['kd_softmax_temp']
+                    kd_docs = nd.softmax(bert_logits / t) * nd.sum(docs, axis=1, keepdims=True)
 
                 # 2. Compute loss
                 y_u = self.Enc(docs)

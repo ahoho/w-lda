@@ -92,13 +92,25 @@ def parse_args():
     parser.add_argument('-topic_decoder_weight','--topic_decoder_weight', type=lambda x: (str(x).lower() == 'true'), default=False, help='extract topic words based on decoder weights or decoder outputs', required=False)
     parser.add_argument('-retrain_enc_only','--retrain_enc_only', type=lambda x: (str(x).lower() == 'true'), default=False, help='only retrain the encoder for reconstruction loss', required=False)
     parser.add_argument('-l2_alpha_retrain','--l2_alpha_retrain', type=float, default=0.1, help='alpha multipler for L2 regularization on encoder output during retraining', required=False)
+    
+    # knowledge-distillation
+    parser.add_argument('--kd_logit_source')
+    parser.add_argument('--kd_loss_alpha', type=float)
+    parser.add_argument('--kd_softmax_temp', type=float)
+    parser.add_argument('--kd_min_count', type=int, default=0)
+    
     args = vars(parser.parse_args())
 
+    # whether knowledge distillation is in use or not
+    args['use_kd'] = args['kd_logit_source'] is not None 
 
     if args['domain'] == 'twenty_news_sklearn':
         from examples.domains.twenty_news_sklearn_wae import TwentyNews as Domain
     elif args['domain'] == 'wikitext-103':
-        from examples.domains.wikitext103_wae import Wikitext103 as Domain
+        if args['use_kd']:
+            from examples.domains.wikitext103_wae import KDWikitext103 as Domain
+        else:
+            from examples.domains.wikitext103_wae import Wikitext103 as Domain
     elif args['domain'] == 'nytimes-pbr':
         from examples.domains.nyt_wae import Nytimes as Domain
     elif args['domain'] == 'ag_news_csv':
@@ -175,13 +187,22 @@ def run_experiment(Compute, Domain, Encoder, Decoder, Discriminator_y, args):
 
     model_ctx = gpu_helper(args['gpu'])
 
-    data = Domain(batch_size=args['batch_size'], data_path=args['data_path'], ctx=model_ctx, saveto=args['saveto'])
+    if args['use_kd']:
+        data = Domain(batch_size=args['batch_size'], data_path=args['data_path'], logit_path=args['kd_logit_source'], ctx=model_ctx, saveto=args['saveto'])
+    else:
+        data = Domain(batch_size=args['batch_size'], data_path=args['data_path'], ctx=model_ctx, saveto=args['saveto'])
+
+    vocab_size = data.data['train'].shape[1]
+    if args['use_kd']:
+        vocab_size //= 2
+    
     print('train dimension = ', data.data['train'].shape)
     if type(data.data['train']) is np.ndarray:
-        mean_length = np.mean(np.sum(data.data['train'], axis=1))
+        mean_length = np.mean(np.sum(data.data['train'][:, :vocab_size], axis=1))
     else:
-        mean_length = mx.nd.mean(mx.nd.sum(data.data['train'], axis=1)).asscalar()
-    vocab_size = data.data['train'].shape[1]
+        mean_length = mx.nd.mean(mx.nd.sum(data.data['train'][:, :vocab_size], axis=1)).asscalar()
+
+    
     if data.data['train_with_labels'] is not None:
         print('train_with_labels dimension = ', data.data['train_with_labels'].shape)
 

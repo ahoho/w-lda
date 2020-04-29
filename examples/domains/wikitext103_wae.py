@@ -64,9 +64,37 @@ class Wikitext103(Data):
         return [train, None, test, None, None, None], [None, None, None], [vocab2dim, dim2vocab, None, None]
 
 
-        with open(vocab_path, encoding=ENCODING) as f:
-             vocab_list = [line.strip('\n') for line in f]
+class KDWikitext103(Data):
+    def __init__(self, batch_size, data_path, logit_path, ctx=None, saveto='', **kwargs):
+        self.saveto = saveto
+        self.logit_path = logit_path
+        super(KDWikitext103, self).__init__(batch_size, data_path, ctx)
 
+    def load(self, data_path, features='BoW', match_avitm=True):
+
+        ### Specify the file locations
+        train_path = data_path + '/train.npz'
+        test_path = data_path + '/test.npz'
+        vocab_path = data_path + '/train.vocab.json'
+
+        ### Load train
+        train_csr = load_sparse(train_path)
+        train_counts = np.array(train_csr.todense()).astype('float32')
+        train_bert_logits = np.load(self.logit_path + "/train.npy")
+        train = np.concatenate([train_counts, train_bert_logits], axis=1)
+
+        ### Load test
+        test_csr = load_sparse(test_path)
+        test_counts = np.array(test_csr.todense()).astype('float32')
+        test_bert_logits = np.ones_like(test_counts)
+        test = np.concatenate([test_counts, test_bert_logits], axis=1)
+
+        ### load vocab
+        # ENCODING = "ISO-8859-1"
+        ENCODING = "utf-8"
+        with open(vocab_path, encoding=ENCODING) as f:
+             vocab_list = json.load(f)
+        
         # construct maps
         vocab2dim = dict(zip(vocab_list, range(len(vocab_list))))
         dim2vocab = reverse_dict(vocab2dim)
