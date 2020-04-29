@@ -13,13 +13,19 @@
 
 import os
 import shutil
+import json
+import argparse
 
 import numpy as np
+import scipy.sparse as sparse 
+from tqdm import tqdm
+import nltk    
+from nltk.stem import WordNetLemmatizer
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.model_selection import train_test_split
 
 from core import Data
-from utils import reverse_dict
-import scipy.sparse as sparse
-import nltk
+from utils import reverse_dict, load_sparse, load_json
 
 
 class Wikitext103(Data):
@@ -27,26 +33,36 @@ class Wikitext103(Data):
         self.saveto = saveto
         super(Wikitext103, self).__init__(batch_size, data_path, ctx)
 
-    def load(self, path='./data/wikitext-103', features='BoW', match_avitm=True):
+    def load(self, path, features='BoW', match_avitm=True):
         if path[:2] == '~/':
             path = os.path.join(os.path.expanduser(path[:2]), path[2:])
 
         ### Specify the file locations
-        train_path = path + '/wikitext-103_tra.csr.npz'
-        test_path = path + '/wikitext-103_test.csr.npz'
-        vocab_path = path + '/vocab.txt'
+        train_path = path + '/train.npz'
+        test_path = path + '/test.npz'
+        vocab_path = path + '/train.vocab.json'
 
         ### Load train
-        train_csr = sparse.load_npz(train_path)
+        train_csr = load_sparse(train_path)
         train = np.array(train_csr.todense()).astype('float32')
 
         ### Load test
-        test_csr = sparse.load_npz(test_path)
+        test_csr = load_sparse(test_path)
         test = np.array(test_csr.todense()).astype('float32')
 
         ### load vocab
-        ENCODING = "ISO-8859-1"
-        # ENCODING = "utf-8"
+        # ENCODING = "ISO-8859-1"
+        ENCODING = "utf-8"
+        with open(vocab_path, encoding=ENCODING) as f:
+             vocab_list = json.load(f)
+
+        # construct maps
+        vocab2dim = dict(zip(vocab_list, range(len(vocab_list))))
+        dim2vocab = reverse_dict(vocab2dim)
+
+        return [train, None, test, None, None, None], [None, None, None], [vocab2dim, dim2vocab, None, None]
+
+
         with open(vocab_path, encoding=ENCODING) as f:
              vocab_list = [line.strip('\n') for line in f]
 
@@ -59,34 +75,40 @@ class Wikitext103(Data):
 
 if __name__ == '__main__':
 
-    def check_create_dir(dir):
-        if os.path.exists(dir):  # cleanup existing data folder
-            shutil.rmtree(dir)
-        os.mkdir(dir)
 
-    # create directory for data
-    dataset = 'wikitext-103'
-    current_dir = os.getcwd()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--output-dir', required=True)
 
-    data_dir = os.path.join(current_dir, "data")
-    if not os.path.exists(data_dir):
-        print('Creating directory:', data_dir)
-        os.mkdir(data_dir)
-    data_dir = os.path.join(current_dir, "data", dataset)
-    check_create_dir(data_dir)
-    os.chdir(data_dir)
-    print('Current directory: ', os.getcwd())
+    parser.add_argument('--lemmatize', dest="lemmatize", action="store_true")
+    parser.add_argument('--do-not-lemmatize', dest="lemmatize", action="store_false")
+
+    parser.add_argument("--max-df", type=float, default=0.8)
+    parser.add_argument("--min-df", type=int, default=3)
+    parser.add_argument("--max-features", type=int, default=20000)
+
+    parser.add_argument("--ngram-min", type=int, default=1)
+    parser.add_argument("--ngram-max", type=int, default=1)
+    
+    parser.add_argument("--dev-split", type=float)
+    parser.add_argument("--test-split", type=float)
+
+    args = parser.parse_args()
+
+    data_dir = 'raw'
 
     # download data
-    os.system("curl -O https://s3.amazonaws.com/research.metamind.io/wikitext/wikitext-103-v1.zip")
-    os.system("unzip wikitext-103-v1.zip")
+    if not os.path.exists(f'{data_dir}/wiki.train.tokens'):
+        os.system("curl -O https://s3.amazonaws.com/research.metamind.io/wikitext/wikitext-103-v1.zip")
+        os.system("unzip wikitext-103-v1.zip")
+        os.system(f"mv wikitext-103 {data_dir}")
+        os.system("rm wikitext-103-v1.zip")
 
     # parse into documents
     def is_document_start(line):
         if len(line) < 4:
             return False
-        if line[0] is '=' and line[-1] is '=':
-            if line[2] is not '=':
+        if line[0] == '=' and line[-1] == '=':
+            if line[2] != '=':
                 return True
             else:
                 return False
@@ -120,18 +142,23 @@ if __name__ == '__main__':
         print("{} documents parsed!".format(len(lines_list)))
         return lines_list
 
-
-    input_dir = os.path.join(data_dir, dataset)
     train_file = 'wiki.train.tokens'
-    val_file = 'wiki.valid.tokens'
-    test_file = 'wiki.test.tokens'
-    train_doc_list = token_list_per_doc(input_dir, train_file)
-    val_doc_list = token_list_per_doc(input_dir, val_file)
-    test_doc_list = token_list_per_doc(input_dir, test_file)
+    train_doc_list = token_list_per_doc(data_dir, train_file)
+
+    if args.dev_split is None:
+        val_file = 'wiki.valid.tokens'
+        test_file = 'wiki.test.tokens'
+        val_doc_list = token_list_per_doc(data_dir, val_file)
+        test_doc_list = token_list_per_doc(data_dir, test_file)
+    else:
+        train_doc_list, test_doc_list = train_test_split(
+            train_doc_list, test_size=args.dev_split + args.test_split, random_state=11235
+        )
+        val_doc_list, test_doc_list = train_test_split(
+            test_doc_list, test_size=args.test_split, random_state=11235
+        )
 
     nltk.download('wordnet')
-    from nltk.stem import WordNetLemmatizer
-    import re
 
     token_pattern = re.compile(r"(?u)\b\w\w+\b")
     class LemmaTokenizer(object):
@@ -142,42 +169,69 @@ if __name__ == '__main__':
             return [self.wnl.lemmatize(t) for t in doc.split() if len(t) >= 2 and re.match("[a-z].*", t)
                     and re.match(token_pattern, t)]
 
-
-    import time
-    import numpy as np
-    from sklearn.feature_extraction.text import CountVectorizer
-
     print('Lemmatizing and counting, this may take a few minutes...')
     start_time = time.time()
-    vectorizer = CountVectorizer(input='content', analyzer='word', stop_words='english',
-                                 tokenizer=LemmaTokenizer(), max_df=0.8, min_df=3, max_features=20000)
+    vectorizer = CountVectorizer(
+        input='content',
+        analyzer='word',
+        stop_words='english',
+        tokenizer=LemmaTokenizer() if args.lemmatize else None,
+        ngram_range=(args.ngram_min, args.ngram_max),
+        max_df=args.max_df,
+        min_df=args.min_df,
+        max_features=args.max_features,
+    )
 
-    train_vectors = vectorizer.fit_transform(train_doc_list)
-    val_vectors = vectorizer.transform(val_doc_list)
-    test_vectors = vectorizer.transform(test_doc_list)
+    train_vectors = vectorizer.fit_transform(tqdm(train_doc_list))
+    val_vectors = vectorizer.transform(tqdm(val_doc_list))
+    test_vectors = vectorizer.transform(tqdm(test_doc_list))
 
     vocab_list = vectorizer.get_feature_names()
     vocab_size = len(vocab_list)
     print('vocab size:', vocab_size)
     print('Done. Time elapsed: {:.2f}s'.format(time.time() - start_time))
 
-    import scipy.sparse as sparse
-    def shuffle_and_dtype(vectors):
+    def shuffle_and_dtype(docs, vectors):
         idx = np.arange(vectors.shape[0])
         np.random.shuffle(idx)
+        docs = [docs[i] for i in idx]
         vectors = vectors[idx]
         vectors = sparse.csr_matrix(vectors, dtype=np.float32)
         print(type(vectors), vectors.dtype)
-        return vectors
+        return docs, vectors
 
-    train_vectors = shuffle_and_dtype(train_vectors)
-    val_vectors = shuffle_and_dtype(val_vectors)
-    test_vectors = shuffle_and_dtype(test_vectors)
+    train_doc_list, train_vectors = shuffle_and_dtype(train_doc_list, train_vectors)
+    val_doc_list, val_vectors = shuffle_and_dtype(val_doc_list, val_vectors)
+    test_doc_list, test_vectors = shuffle_and_dtype(test_doc_list, test_vectors)
 
-    with open('vocab.txt', 'w', encoding='utf-8') as f:
-        for item in vocab_list:
-            f.write(item+'\n')
+    os.makedirs(args.output_dir, exist_ok=True)
 
-    sparse.save_npz('wikitext-103_tra.csr.npz', train_vectors)
-    sparse.save_npz('wikitext-103_val.csr.npz', val_vectors)
-    sparse.save_npz('wikitext-103_test.csr.npz', test_vectors)
+    utils.save_json(vocab_list, f"{args.output_dir}/train.vocab.json")
+
+    train_ids = list(range(len(train_doc_list)))
+    val_ids = list(range(len(val_doc_list)))
+    test_ids = list(range(len(test_doc_list)))
+
+    # save ids
+    utils.save_json(train_ids, f"{args.output_dir}/train.ids.json")
+    utils.save_json(val_ids, f"{args.output_dir}/dev.ids.json")
+    utils.save_json(test_ids, f"{args.output_dir}/test.ids.json")
+
+    # save the raw text
+    utils.save_jsonlist(
+        ({"id": id, "text": text} for id, text in zip(train_ids, train_doc_list)),
+        f"{args.output_dir}/train.jsonlist",
+    )
+    utils.save_jsonlist(
+        ({"id": id, "text": text} for id, text in zip(val_ids, val_doc_list)),
+        f"{args.output_dir}/dev.jsonlist",
+    )
+    utils.save_jsonlist(
+        ({"id": id, "text": text} for id, text in zip(test_ids, test_doc_list)),
+        f"{args.output_dir}/test.jsonlist",
+    )
+
+    utils.save_sparse(train_vectors, f'{args.output_dir}/train.npz')
+    utils.save_sparse(val_vectors, f'{args.output_dir}/dev.npz')
+    utils.save_sparse(test_vectors, f'{args.output_dir}/test.npz')
+
