@@ -25,8 +25,9 @@ from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.model_selection import train_test_split
 
 from core import Data
-from utils import reverse_dict, load_sparse, load_json
-
+from utils import (
+    reverse_dict, load_sparse, load_json, save_sparse, save_json, save_jsonlist
+)
 
 class Wikitext103(Data):
     def __init__(self, batch_size, data_path='', ctx=None, saveto='', **kwargs):
@@ -206,32 +207,32 @@ if __name__ == '__main__':
 
     os.makedirs(args.output_dir, exist_ok=True)
 
-    utils.save_json(vocab_list, f"{args.output_dir}/train.vocab.json")
+    save_json(vocab_list, f"{args.output_dir}/train.vocab.json")
 
     train_ids = list(range(len(train_doc_list)))
     val_ids = list(range(len(val_doc_list)))
     test_ids = list(range(len(test_doc_list)))
 
     # save ids
-    utils.save_json(train_ids, f"{args.output_dir}/train.ids.json")
-    utils.save_json(val_ids, f"{args.output_dir}/dev.ids.json")
-    utils.save_json(test_ids, f"{args.output_dir}/test.ids.json")
+    save_json(train_ids, f"{args.output_dir}/train.ids.json")
+    save_json(val_ids, f"{args.output_dir}/dev.ids.json")
+    save_json(test_ids, f"{args.output_dir}/test.ids.json")
 
     # save the raw text
-    utils.save_jsonlist(
+    save_jsonlist(
         ({"id": id, "text": text} for id, text in zip(train_ids, train_doc_list)),
         f"{args.output_dir}/train.jsonlist",
     )
-    utils.save_jsonlist(
+    save_jsonlist(
         ({"id": id, "text": text} for id, text in zip(val_ids, val_doc_list)),
         f"{args.output_dir}/dev.jsonlist",
     )
-    utils.save_jsonlist(
+    save_jsonlist(
         ({"id": id, "text": text} for id, text in zip(test_ids, test_doc_list)),
         f"{args.output_dir}/test.jsonlist",
     )
 
-    utils.save_sparse(train_vectors, f'{args.output_dir}/train.npz')
-    utils.save_sparse(val_vectors, f'{args.output_dir}/dev.npz')
-    utils.save_sparse(test_vectors, f'{args.output_dir}/test.npz')
+    save_sparse(train_vectors, f'{args.output_dir}/train.npz')
+    save_sparse(val_vectors, f'{args.output_dir}/dev.npz')
+    save_sparse(test_vectors, f'{args.output_dir}/test.npz')
 
