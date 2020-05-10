@@ -26,10 +26,12 @@ import sys
 sys.path.append('../')
 
 import mxnet as mx
-mx.random.seed(int(time.time()))
+mx.random.seed(42)#int(time.time()))
 
-from utils import gpu_helper, gpu_exists, calc_topic_uniqueness, get_topic_words_decoder_weights, request_pmi, print_topic_with_scores, print_topics
-
+from utils import (
+    gpu_helper, gpu_exists, calc_topic_uniqueness, get_topic_words_decoder_weights,
+    print_topic_with_scores, print_topics, compute_npmi_at_n_during_training
+)
 
 from tqdm import tqdm
 
