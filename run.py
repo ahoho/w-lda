@@ -355,13 +355,13 @@ def run_experiment(Compute, Domain, Encoder, Decoder, Discriminator_y, args):
                     np.save(os.path.join(args['saveto'], "enc_out_epoch{}".format(i)), enc_out.asnumpy())
                 else:
                     # extract topic words from decoder output:
-                    topic_words = get_topic_words_decoder_weights(Dec, data, model_ctx, decoder_weights=False)
+                    topic_words, params = get_topic_words_decoder_weights(Dec, data, model_ctx, decoder_weights=False)
                     topic_uniqs = calc_topic_uniqueness(topic_words)
                     eval_record['Topic Uniqueness'].append(np.mean(list(topic_uniqs.values())))
                     topic_json = dict()
                     for tp in range(len(topic_words)):
                         topic_json[tp] = topic_words[tp]
-                    pmi_dict, npmi_dict = request_pmi(topic_dict=topic_json, port=1234)
+                    npmi_dict = compute_npmi_at_n_during_training(params, data.dev_counts, n=10)
                     eval_record['NPMI'].append(np.mean(list(npmi_dict.values())))
                     print("Topic Eval (decoder output): Uniq={:.5g}, NPMI={:.5g}".format(
                         eval_record['Topic Uniqueness'][-1], eval_record['NPMI'][-1]))
@@ -369,13 +369,13 @@ def run_experiment(Compute, Domain, Encoder, Decoder, Discriminator_y, args):
                     print_topics(topic_json, npmi_dict, topic_uniqs, data)
 
                     # extract topic words from decoder weight matrix:
-                    topic_words = get_topic_words_decoder_weights(Dec, data, model_ctx, decoder_weights=True)
+                    topic_words, params = get_topic_words_decoder_weights(Dec, data, model_ctx, decoder_weights=True)
                     topic_uniqs = calc_topic_uniqueness(topic_words)
                     eval_record['Topic Uniqueness2'].append(np.mean(list(topic_uniqs.values())))
                     topic_json = dict()
                     for tp in range(len(topic_words)):
                         topic_json[tp] = topic_words[tp]
-                    pmi_dict, npmi_dict = request_pmi(topic_dict=topic_json, port=1234)
+                    npmi_dict = compute_npmi_at_n_during_training(params, data.dev_counts, n=10)
                     eval_record['NPMI2'].append(np.mean(list(npmi_dict.values())))
                     print("Topic Eval (decoder weight): Uniq={:.5g}, NPMI={:.5g}".format(
                         eval_record['Topic Uniqueness2'][-1], eval_record['NPMI2'][-1]))
