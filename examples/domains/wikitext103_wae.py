@@ -40,12 +40,16 @@ class Wikitext103(Data):
 
         ### Specify the file locations
         train_path = path + '/train.npz'
+        dev_path = path + '/dev.npz'
         test_path = path + '/test.npz'
         vocab_path = path + '/train.vocab.json'
 
         ### Load train
         train_csr = load_sparse(train_path)
         train = np.array(train_csr.todense()).astype('float32')
+
+        ### Load dev
+        self.dev_counts = load_sparse(dev_path).tocsc() # will be used for NPMI
 
         ### Load test
         test_csr = load_sparse(test_path)
@@ -74,6 +78,7 @@ class KDWikitext103(Data):
 
         ### Specify the file locations
         train_path = data_path + '/train.npz'
+        dev_path = data_path + '/dev.npz'
         test_path = data_path + '/test.npz'
         vocab_path = data_path + '/train.vocab.json'
 
@@ -82,6 +87,12 @@ class KDWikitext103(Data):
         train_counts = np.array(train_csr.todense()).astype('float32')
         train_bert_logits = np.load(self.logit_path + "/train.npy")
         train = np.concatenate([train_counts, train_bert_logits], axis=1)
+
+        #min_logits = np.quantile(train_bert_logits, np.quantile(train_counts.sum(1), 0.9) / 20_000, axis=1)
+        #train_bert_logits[train_bert_logits < min_logits.reshape(-1, 1)] = -np.inf
+        
+        ### Load dev
+        self.dev_counts = load_sparse(dev_path).tocsc() # will be used for NPMI
 
         ### Load test
         test_csr = load_sparse(test_path)
