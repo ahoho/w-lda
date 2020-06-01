@@ -99,20 +99,29 @@ def parse_args():
     parser.add_argument('--kd_logit_source')
     parser.add_argument('--kd_loss_alpha', type=float)
     parser.add_argument('--kd_softmax_temp', type=float)
-    parser.add_argument('--kd_min_count', type=int, default=0)
-    
+    parser.add_argument('--kd_min_count', type=float, default=0)
+    parser.add_argument('--kd_logit_clipping', type=float, default=None)
+
     args = vars(parser.parse_args())
 
     # whether knowledge distillation is in use or not
     args['use_kd'] = args['kd_logit_source'] is not None 
 
     if args['domain'] == 'twenty_news_sklearn':
-        from examples.domains.twenty_news_sklearn_wae import TwentyNews as Domain
+        if args['use_kd']:
+            from examples.domains.processed_data_wae import KDProcessedData as Domain
+        else:
+            from examples.domains.processed_data_wae import ProcessedData as Domain
     elif args['domain'] == 'wikitext-103':
         if args['use_kd']:
-            from examples.domains.wikitext103_wae import KDWikitext103 as Domain
+            from examples.domains.processed_data_wae import KDProcessedData as Domain
         else:
-            from examples.domains.wikitext103_wae import Wikitext103 as Domain
+            from examples.domains.processed_data_wae import ProcessedData as Domain    
+    elif args['domain'] == 'imdb':
+        if args['use_kd']:
+            from examples.domains.processed_data_wae import KDProcessedData as Domain
+        else:
+            from examples.domains.processed_data_wae import ProcessedData as Domain
     elif args['domain'] == 'nytimes-pbr':
         from examples.domains.nyt_wae import Nytimes as Domain
     elif args['domain'] == 'ag_news_csv':
@@ -190,7 +199,14 @@ def run_experiment(Compute, Domain, Encoder, Decoder, Discriminator_y, args):
     model_ctx = gpu_helper(args['gpu'])
 
     if args['use_kd']:
-        data = Domain(batch_size=args['batch_size'], data_path=args['data_path'], logit_path=args['kd_logit_source'], ctx=model_ctx, saveto=args['saveto'])
+        data = Domain(
+            batch_size=args['batch_size'],
+            data_path=args['data_path'],
+            logit_path=args['kd_logit_source'],
+            logit_clip=args['kd_logit_clipping'],
+            ctx=model_ctx,
+            saveto=args['saveto']
+        )
     else:
         data = Domain(batch_size=args['batch_size'], data_path=args['data_path'], ctx=model_ctx, saveto=args['saveto'])
 
